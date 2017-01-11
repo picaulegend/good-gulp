@@ -7,8 +7,9 @@ The good-gulp config is written to my taste (and limited by my knowledge), so yo
 
 
 ## to do
-+ check if publish works
++ check if publish works x (seems bucket has to be ireland)
 + clean up the file
 + add javascript optimization and features
 + html partials
 + thoroughly test it
++ make webpack version with es6

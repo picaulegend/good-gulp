@@ -2,25 +2,28 @@ var gulp = require('gulp');
 var browserSync = require('browser-sync');
 var runSequence = require('run-sequence');
 var plugins = require('gulp-load-plugins')();
-var revdel = require('gulp-rev-delete-original');
 var del = require('del');
 var AWS = require('aws-sdk');
+var pump = require('pump');
 
 /* work, build, publish */
-gulp.task('default', function(callback) {
+gulp.task('default', function(cb) {
   runSequence(['sass', 'browserSync'], 'watch',
-    callback
+    cb
   )
 })
 
-gulp.task('build', function(callback) {
-  runSequence('clean:dist', ['html', 'css', 'js', 'img', 'misc'], 'revreplace',
-    callback
+gulp.task('build', function(cb) {
+  runSequence('clean', ['html', 'css', 'js', 'img', 'misc'], 'revreplace',
+    cb
   )
 })
 
-
-
+gulp.task('publish', function(cb) {
+  runSequence('s3',
+    cb
+  )
+})
 
 /* browser */
 gulp.task('browserSync', function() {
@@ -39,26 +42,26 @@ gulp.task('watch', function() {
 })
 
 /* cleaning */
-gulp.task('clean:dist', function() {
-  return del.sync('dist');
+gulp.task('clean', function() {
+  return del.sync(['dist/css/', 'dist/js/']);
 })
 
-/* revving */
-gulp.task("revision", function(){
-  return gulp.src(["dist/**/*.css", "dist/**/*.js", "dist/**/*.+(png|jpg|jpeg|gif|svg)"])
+/* revving & replacing */
+gulp.task('revision', function(){
+  return gulp.src(['dist/**/*.css', 'dist/**/*.js'])
     .pipe(plugins.rev())
-    .pipe(revdel())
+    .pipe(plugins.revDeleteOriginal())
     .pipe(gulp.dest('dist'))
     .pipe(plugins.rev.manifest())
     .pipe(gulp.dest('dist'))
 })
 
-gulp.task("revreplace", ["revision"], function(){
+gulp.task('revreplace', ['revision'], function(){
   var manifest = gulp.src("dist/rev-manifest.json");
 
-  return gulp.src("dist/index.html")
+  return gulp.src('dist/index.html')
     .pipe(plugins.revReplace({manifest: manifest}))
-    .pipe(gulp.dest("dist"));
+    .pipe(gulp.dest('dist'));
 });
 
 
@@ -85,16 +88,20 @@ gulp.task('sass', function() {
 /* css */
 gulp.task('css', function() {
 	return gulp.src('src/css/**/*')
-		.pipe(plugins.changed('dist/css'))
 		.pipe(plugins.cleanCss())
 		.pipe(gulp.dest('dist/css/'))
 })
 
 /* js */
-gulp.task('js', function() {
-  return gulp.src('src/js/**/*')
-    .pipe(gulp.dest('dist/js/'))
-})
+gulp.task('js', function (cb) {
+  pump([
+        gulp.src('src/js/**/*.js'),
+        plugins.uglify(),
+        gulp.dest('dist/js/')
+    ],
+    cb
+  );
+});
 
 /* img */
 gulp.task('img', function() {
@@ -111,25 +118,20 @@ gulp.task('misc', function() {
     .pipe(gulp.dest('dist/misc/'))
 })
 
-
-
-
-
-
-
-gulp.task('publish', function() {
+/* s3 */
+gulp.task('s3', function() {
   var publisher = plugins.awspublish.create({
     params: {
      Bucket: ''
   },
   credentials: new AWS.SharedIniFileCredentials({profile: 'default'})
   });
- 
+  
   var headers = {
     'Cache-Control': 'max-age=315360000, no-transform, public'
   };
  
-  return gulp.src('./dist/**/*') 
+  return gulp.src('./dist/**/*')
     .pipe(plugins.awspublish.gzip())
     .pipe(publisher.publish(headers))
     .pipe(publisher.cache())
